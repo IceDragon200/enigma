@@ -1009,7 +1009,7 @@ macro_rules! copy_binary {
 //
 
 pub fn append(
-    process: &Pin<&mut Process>,
+    process: &mut Process,
     binary: Term,
     build_size: Term,
     _extra_words: usize,
@@ -1025,7 +1025,7 @@ pub fn append(
         // p->freason = BADARG;
     };
 
-    let heap = &process.context_mut().heap;
+    let heap = &process.heap;
 
     // Check the binary argument.
 
@@ -1080,7 +1080,7 @@ pub fn append(
         if data.capacity() < size {
             data.reserve(2 * size); // why 2*?
         }
-        process.context_mut().bs = data;
+        process.context.bs = data;
 
         // Allocate heap space and build a new sub binary.
 
@@ -1148,7 +1148,7 @@ pub fn append(
         let new_binary = heap.alloc(Arc::new(Binary::with_capacity(size))).clone();
         // ACTIVE_WRITER
 
-        process.context_mut().bs = new_binary.get_mut();
+        process.context.bs = new_binary.get_mut();
 
         // Now copy the data into the binary.
         copy_binary!(
@@ -1168,7 +1168,7 @@ pub fn append(
 }
 
 pub fn private_append(
-    process: &Pin<&mut Process>,
+    process: &mut Process,
     binary: Term,
     build_size: Term,
     unit: usize,
@@ -1205,7 +1205,7 @@ pub fn private_append(
     if data.capacity() < size {
         data.reserve(2 * size); // why 2*?
     }
-    process.context_mut().bs = data;
+    process.context.bs = data;
 
     sb.size = size_in_bits_after_build >> 3;
     sb.bitsize = size_in_bits_after_build & 7;
@@ -1213,13 +1213,13 @@ pub fn private_append(
 }
 
 // TODO: transform into SubBinary::new() + is_writable
-pub fn init_writable(process: &Pin<&mut Process>, size: Term) -> Term {
+pub fn init_writable(process: &mut Process, size: Term) -> Term {
     let size = match size.into_variant() {
         value::Variant::Integer(i) if i >= 0 => i as usize,
         _ => 1024,
     };
 
-    let heap = &process.context_mut().heap;
+    let heap = &process.heap;
 
     // TODO: the RcBinary alloc needs to be sorted out so we don't leak
     let binary = heap.alloc(Arc::new(Binary::with_capacity(size))).clone();

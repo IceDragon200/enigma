@@ -8,19 +8,19 @@ use hamt_rs::HamtMap;
 use std::pin::Pin;
 
 // TODO: deprecated past OTP 22
-pub fn new_0(_vm: &vm::Machine, process: &Pin<&mut Process>, _args: &[Term]) -> bif::Result {
-    let heap = &process.context_mut().heap;
+pub fn new_0(_vm: &vm::Machine, process: &mut Process, _args: &[Term]) -> bif::Result {
+    let heap = &process.heap;
     let new_map = HAMT::new();
     Ok(Term::map(heap, new_map))
 }
 
-pub fn find_2(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
+pub fn find_2(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     let key = &args[0];
     let map = &args[1];
     if let Ok(value::Map(map)) = map.try_into() {
         match map.find(key) {
             Some(value) => {
-                let heap = &process.context_mut().heap;
+                let heap = &process.heap;
                 return Ok(tup2!(heap, atom!(OK), *value));
             }
             None => {
@@ -31,7 +31,7 @@ pub fn find_2(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> 
     Err(Exception::with_value(Reason::EXC_BADMAP, *map))
 }
 
-pub fn get_2(_vm: &vm::Machine, _process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
+pub fn get_2(_vm: &vm::Machine, _process: &mut Process, args: &[Term]) -> bif::Result {
     let map = &args[1];
     if let Ok(value::Map(map)) = map.try_into() {
         let target = &args[0];
@@ -47,7 +47,7 @@ pub fn get_2(_vm: &vm::Machine, _process: &Pin<&mut Process>, args: &[Term]) -> 
     Err(Exception::with_value(Reason::EXC_BADMAP, *map))
 }
 
-pub fn from_list_1(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
+pub fn from_list_1(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     let mut list = &args[0];
     if !list.is_list() {
         return Err(Exception::new(Reason::EXC_BADARG));
@@ -64,12 +64,12 @@ pub fn from_list_1(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]
         }
         list = tail;
     }
-    let heap = &process.context_mut().heap;
+    let heap = &process.heap;
     Ok(Term::map(heap, map))
 }
 
-pub fn to_list_1(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
-    let heap = &process.context_mut().heap;
+pub fn to_list_1(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
+    let heap = &process.heap;
     let map = &args[0];
     if let Ok(value::Map(map)) = map.try_into() {
         let res = map.iter().fold(Term::nil(), |acc, (key, val)| {
@@ -80,7 +80,7 @@ pub fn to_list_1(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) 
     Err(Exception::with_value(Reason::EXC_BADMAP, *map))
 }
 
-pub fn is_key_2(_vm: &vm::Machine, _process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
+pub fn is_key_2(_vm: &vm::Machine, _process: &mut Process, args: &[Term]) -> bif::Result {
     let map = &args[1];
     if let Ok(value::Map(map)) = map.try_into() {
         let target = &args[0];
@@ -90,17 +90,17 @@ pub fn is_key_2(_vm: &vm::Machine, _process: &Pin<&mut Process>, args: &[Term]) 
     Err(Exception::with_value(Reason::EXC_BADMAP, *map))
 }
 
-pub fn keys_1(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
+pub fn keys_1(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     let map = &args[0];
     if let Ok(value::Map(map)) = map.try_into() {
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
         let list = iter_to_list!(heap, map.iter().map(|(k, _)| k).cloned());
         return Ok(list);
     }
     Err(Exception::with_value(Reason::EXC_BADMAP, *map))
 }
 
-pub fn merge_2(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
+pub fn merge_2(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     let map1 = match args[0].try_into() {
         Ok(value::Map(map)) => map,
         _ => return Err(Exception::with_value(Reason::EXC_BADMAP, args[0])),
@@ -113,12 +113,12 @@ pub fn merge_2(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) ->
     for (k, v) in map1.iter() {
         new_map = new_map.plus(*k, *v);
     }
-    let heap = &process.context_mut().heap;
+    let heap = &process.heap;
     Ok(Term::map(heap, new_map))
 }
 
-pub fn put_3(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
-    let heap = &process.context_mut().heap;
+pub fn put_3(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
+    let heap = &process.heap;
     let key = args[0];
     let value = args[1];
     let map = args[2];
@@ -129,8 +129,8 @@ pub fn put_3(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> b
     Err(Exception::with_value(Reason::EXC_BADMAP, map))
 }
 
-pub fn remove_2(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
-    let heap = &process.context_mut().heap;
+pub fn remove_2(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
+    let heap = &process.heap;
     let key = args[0];
     let map = args[1];
     if let Ok(value::Map(map)) = map.try_into() {
@@ -140,7 +140,7 @@ pub fn remove_2(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -
     Err(Exception::with_value(Reason::EXC_BADMAP, map))
 }
 
-pub fn update_3(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
+pub fn update_3(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     let key = args[0];
     let value = args[1];
     let map = args[2];
@@ -148,7 +148,7 @@ pub fn update_3(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -
         match map.find(&key) {
             Some(_v) => {
                 let new_map = map.clone().plus(key, value);
-                let heap = &process.context_mut().heap;
+                let heap = &process.heap;
                 return Ok(Term::map(heap, new_map));
             }
             None => {
@@ -159,23 +159,23 @@ pub fn update_3(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -
     Err(Exception::with_value(Reason::EXC_BADMAP, map))
 }
 
-pub fn values_1(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
+pub fn values_1(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     let map = args[0];
     if let Ok(value::Map(map)) = map.try_into() {
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
         let list = iter_to_list!(heap, map.iter().map(|(_, v)| v).cloned());
         return Ok(list);
     }
     Err(Exception::with_value(Reason::EXC_BADMAP, map))
 }
 
-pub fn take_2(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
+pub fn take_2(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     let key = args[0];
     let map = args[1];
     if let Ok(value::Map(map)) = map.try_into() {
         let result = if let Some(value) = map.find(&key) {
             let new_map = map.clone().minus(&key);
-            let heap = &process.context_mut().heap;
+            let heap = &process.heap;
             tup2!(heap, *value, Term::map(heap, new_map))
         } else {
             str_to_atom!("error")
@@ -197,7 +197,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let key = str_to_atom!("test");
         let map = map!(heap, key => Term::int(3));
@@ -220,7 +220,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let key = str_to_atom!("test");
         let map = map!(heap, key => Term::int(3));
@@ -252,7 +252,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let map = map!(heap, str_to_atom!("test") => Term::int(3));
         let args = vec![str_to_atom!("test"), map];
@@ -284,7 +284,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let map = map!(heap, str_to_atom!("test") => Term::int(3));
         let args = vec![str_to_atom!("fail"), map];
@@ -302,7 +302,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let list = cons!(
             heap,
@@ -322,7 +322,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let bad_list = Term::int(1);
         let args = vec![bad_list];
@@ -340,7 +340,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let bad_tuple = tup3!(heap, Term::int(1), Term::int(2), Term::int(3));
         let list = cons!(
@@ -367,7 +367,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let map = map!(heap, str_to_atom!("test") => Term::int(1));
         let args = vec![str_to_atom!("test"), map];
@@ -382,7 +382,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let map = map!(heap, str_to_atom!("test") => Term::int(3));
         let args = vec![str_to_atom!("false"), map];
@@ -414,7 +414,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let map =
             map!(heap, str_to_atom!("test") => Term::int(1), str_to_atom!("test2") => Term::int(2));
@@ -452,7 +452,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let map1 =
             map!(heap, str_to_atom!("test") => Term::int(1), str_to_atom!("test2") => Term::int(2));
@@ -476,7 +476,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let map =
             map!(heap, str_to_atom!("test") => Term::int(1), str_to_atom!("test2") => Term::int(2));
@@ -517,7 +517,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let key = str_to_atom!("test");
 
@@ -560,7 +560,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let key = str_to_atom!("test");
         let map = map!(heap, key => Term::int(1));
@@ -598,7 +598,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let key = str_to_atom!("test");
         let value = Term::int(1);
@@ -620,7 +620,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let key = str_to_atom!("test");
         let value = Term::int(2);
@@ -663,7 +663,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let map =
             map!(heap, str_to_atom!("test") => Term::int(1), str_to_atom!("test2") => Term::int(2));
@@ -701,7 +701,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let map =
             map!(heap, str_to_atom!("test") => Term::int(1), str_to_atom!("test2") => Term::int(2));
@@ -747,7 +747,7 @@ mod tests {
         let vm = vm::Machine::new();
         let module: *const module::Module = std::ptr::null();
         let process = process::allocate(&vm.state, 0, module).unwrap();
-        let heap = &process.context_mut().heap;
+        let heap = &process.heap;
 
         let map =
             map!(heap, str_to_atom!("test") => Term::int(1), str_to_atom!("test2") => Term::int(2));

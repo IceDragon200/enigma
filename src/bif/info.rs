@@ -14,8 +14,6 @@ pub fn process_info_aux(
     always_wrap: bool,
 ) -> bif::Result {
     use crate::process::{self, Flag};
-    let heap = &process.context_mut().heap;
-
     // TODO: bump process regs
     // (*reds)++;
 
@@ -43,11 +41,9 @@ pub fn process_info_aux(
         _ => return Err(Exception::new(Reason::EXC_BADARG)),
     };
 
-    let local_data = process.local_data();
-
     let res = match item {
         atom::REGISTERED_NAME => {
-            if let Some(name) = local_data.name {
+            if let Some(name) = process.local_data.name {
                 Term::atom(name)
             } else {
                 if always_wrap {
@@ -69,23 +65,27 @@ pub fn process_info_aux(
             // TODO: quick cheat
             Term::nil()
         }
-        atom::MESSAGE_QUEUE_LEN => Term::uint(heap, local_data.mailbox.len() as u32),
+        atom::MESSAGE_QUEUE_LEN => {
+            Term::uint(&process.heap, process.local_data.mailbox.len() as u32)
+        }
         atom::MESSAGE_QUEUE_DATA => unimplemented!(),
-        atom::LINKS => local_data
+        atom::LINKS => process
+            .local_data
             .links
             .iter()
-            .fold(Term::nil(), |acc, pid| cons!(heap, Term::pid(*pid), acc)),
+            .fold(Term::nil(), |acc, pid| {
+                cons!(&process.heap, Term::pid(*pid), acc)
+            }),
         atom::MONITORED_BY => unimplemented!(),
         atom::DICTIONARY => {
-            let pdict = &process.local_data_mut().dictionary;
-            let heap = &process.context_mut().heap;
+            let pdict = &process.local_data.dictionary;
 
             pdict.iter().fold(Term::nil(), |res, (key, val)| {
-                let tuple = tup2!(heap, *key, *val);
-                cons!(heap, tuple, res)
+                let tuple = tup2!(&process.heap, *key, *val);
+                cons!(&process.heap, tuple, res)
             })
         }
-        atom::TRAP_EXIT => Term::boolean(local_data.flags.contains(Flag::TRAP_EXIT)),
+        atom::TRAP_EXIT => Term::boolean(process.local_data.flags.contains(Flag::TRAP_EXIT)),
         atom::ERROR_HANDLER => unimplemented!(),
         atom::HEAP_SIZE => {
             // TODO: temporary
@@ -99,7 +99,7 @@ pub fn process_info_aux(
         atom::GARBAGE_COLLECTION => unimplemented!(),
         atom::GARBAGE_COLLECTION_INFO => unimplemented!(),
         atom::GROUP_LEADER => unimplemented!(),
-        atom::REDUCTIONS => Term::uint(heap, process.context().reds as u32),
+        atom::REDUCTIONS => Term::uint(&process.heap, process.context.reds as u32),
         atom::PRIORITY => unimplemented!(),
         atom::TRACE => unimplemented!(),
         atom::BINARY => unimplemented!(),
@@ -117,10 +117,10 @@ pub fn process_info_aux(
         _ => return Err(Exception::new(Reason::EXC_BADARG)),
     };
 
-    Ok(tup2!(heap, Term::atom(item), res))
+    Ok(tup2!(&process.heap, Term::atom(item), res))
 }
 
-pub fn process_info_2(vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
+pub fn process_info_2(vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     // args are pid, `[item, .. ]` or just `item`.
     // response is `[tup,..]` or just `tup`
     if !args[0].is_pid() {
@@ -137,12 +137,10 @@ pub fn process_info_2(vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Ter
 
     if let Some(proc) = proc {
         match Cons::try_from(&args[1]) {
-            Ok(cons) => {
-                let heap = &process.context_mut().heap;
-                cons.iter()
-                    .map(|val| process_info_aux(vm, &proc, *val, true))
-                    .fold_results(Term::nil(), |acc, val| cons!(heap, val, acc))
-            }
+            Ok(cons) => cons
+                .iter()
+                .map(|val| process_info_aux(vm, &proc, *val, true))
+                .fold_results(Term::nil(), |acc, val| cons!(&process.heap, val, acc)),
             _ => process_info_aux(vm, &proc, args[1], false),
         }
     } else {
@@ -156,25 +154,21 @@ const OS_FAMILY: u32 = atom::UNIX;
 #[cfg(target_family = "windows")]
 const OS_FAMILY: u32 = atom::WIN32;
 
-pub fn system_info_1(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
-    let heap = &process.context_mut().heap;
-
+pub fn system_info_1(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     match args[0].into_variant() {
-        Variant::Atom(atom::OS_TYPE) => Ok(tup2!(heap, Term::atom(OS_FAMILY), atom!(TRUE))), // TODO: true should be :darwin
+        Variant::Atom(atom::OS_TYPE) => {
+            Ok(tup2!(&process.heap, Term::atom(OS_FAMILY), atom!(TRUE)))
+        } // TODO: true should be :darwin
         Variant::Atom(atom::HIPE_ARCHITECTURE) => Ok(atom!(UNDEFINED)),
         _ => unimplemented!("system_info for {}", args[0]),
     }
 }
 
-pub fn group_leader_0(
-    _vm: &vm::Machine,
-    process: &Pin<&mut Process>,
-    _args: &[Term],
-) -> bif::Result {
-    Ok(Term::pid(process.local_data().group_leader))
+pub fn group_leader_0(_vm: &vm::Machine, process: &mut Process, _args: &[Term]) -> bif::Result {
+    Ok(Term::pid(process.local_data.group_leader))
 }
 
-pub fn group_leader_2(vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
+pub fn group_leader_2(vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     if !args[0].is_pid() {
         return Err(Exception::new(Reason::EXC_BADARG));
     }

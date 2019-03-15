@@ -45,8 +45,8 @@ macro_rules! fail {
 #[allow(dead_code)]
 pub fn run(
     vm: &vm::Machine,
-    process: &Pin<&mut Process>,
-    // pself: &Pin<&mut Process>,
+    process: &mut Process,
+    // pself: &mut Process,
     pat: &pam::Pattern,
     term: Term,     /*Eterm *termp, arity: usize*/
     in_flags: Flag, /*, Uint32 *return_flags*/
@@ -301,7 +301,7 @@ pub fn run(
                 Opcode::PushC(c) => {
                     // Push constant
                     if in_flags.contains(Flag::COPY_RESULT) && do_catch && !c.is_immed() {
-                        esp.push(c.deep_clone(&process.context_mut().heap));
+                        esp.push(c.deep_clone(&process.heap));
                     } else {
                         esp.push(c);
                     }
@@ -417,7 +417,7 @@ pub fn run(
                     } else {
                         // Build copy on callers heap
                         // assert!(!variables[n].proc);
-                        variables[n] = variables[n].deep_clone(&process.context_mut().heap);
+                        variables[n] = variables[n].deep_clone(&process.heap);
                         esp.push(variables[n])
                     }
                 }

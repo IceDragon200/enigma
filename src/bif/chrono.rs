@@ -13,8 +13,8 @@ use std::time::SystemTime;
 /// http://erlang.org/doc/apps/erts/time_correction.html
 /// http://erlang.org/doc/apps/erts/time_correction.html#Erlang_System_Time
 
-pub fn date_0(_vm: &vm::Machine, process: &Pin<&mut Process>, _args: &[Term]) -> bif::Result {
-    let heap = &process.context_mut().heap;
+pub fn date_0(_vm: &vm::Machine, process: &mut Process, _args: &[Term]) -> bif::Result {
+    let heap = &process.heap;
     let date = Local::today();
 
     Ok(tup3!(
@@ -25,8 +25,8 @@ pub fn date_0(_vm: &vm::Machine, process: &Pin<&mut Process>, _args: &[Term]) ->
     ))
 }
 
-pub fn localtime_0(_vm: &vm::Machine, process: &Pin<&mut Process>, _args: &[Term]) -> bif::Result {
-    let heap = &process.context_mut().heap;
+pub fn localtime_0(_vm: &vm::Machine, process: &mut Process, _args: &[Term]) -> bif::Result {
+    let heap = &process.heap;
     let datetime = Local::now();
 
     let date = tup3!(
@@ -46,15 +46,11 @@ pub fn localtime_0(_vm: &vm::Machine, process: &Pin<&mut Process>, _args: &[Term
 
 // now_0 is deprecated
 
-pub fn monotonic_time_0(
-    vm: &vm::Machine,
-    process: &Pin<&mut Process>,
-    _args: &[Term],
-) -> bif::Result {
+pub fn monotonic_time_0(vm: &vm::Machine, process: &mut Process, _args: &[Term]) -> bif::Result {
     // TODO: needs https://github.com/rust-lang/rust/issues/50202
     // .as_nanos()
 
-    let heap = &process.context_mut().heap;
+    let heap = &process.heap;
 
     Ok(Term::bigint(
         heap,
@@ -63,14 +59,10 @@ pub fn monotonic_time_0(
 }
 
 // TODO monotonic_time_1
-pub fn monotonic_time_1(
-    vm: &vm::Machine,
-    process: &Pin<&mut Process>,
-    _args: &[Term],
-) -> bif::Result {
+pub fn monotonic_time_1(vm: &vm::Machine, process: &mut Process, _args: &[Term]) -> bif::Result {
     // TODO: needs https://github.com/rust-lang/rust/issues/50202
     // .as_nanos()
-    let heap = &process.context_mut().heap;
+    let heap = &process.heap;
 
     Ok(Term::bigint(
         heap,
@@ -78,12 +70,8 @@ pub fn monotonic_time_1(
     ))
 }
 
-pub fn system_time_0(
-    _vm: &vm::Machine,
-    process: &Pin<&mut Process>,
-    _args: &[Term],
-) -> bif::Result {
-    let heap = &process.context_mut().heap;
+pub fn system_time_0(_vm: &vm::Machine, process: &mut Process, _args: &[Term]) -> bif::Result {
+    let heap = &process.heap;
 
     Ok(Term::bigint(
         heap,
@@ -96,8 +84,8 @@ pub fn system_time_0(
     ))
 }
 
-pub fn system_time_1(vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
-    let heap = &process.context_mut().heap;
+pub fn system_time_1(vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
+    let heap = &process.heap;
 
     let time = match args[0].into_variant() {
         Variant::Atom(atom::SECOND) | Variant::Atom(atom::NATIVE) => SystemTime::now()
@@ -135,12 +123,8 @@ pub fn system_time_1(vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term
 // MicroSecs = ErlangSystemTime rem 1000000,
 // {MegaSecs, Secs, MicroSecs}.
 
-pub fn universaltime_0(
-    _vm: &vm::Machine,
-    process: &Pin<&mut Process>,
-    _args: &[Term],
-) -> bif::Result {
-    let heap = &process.context_mut().heap;
+pub fn universaltime_0(_vm: &vm::Machine, process: &mut Process, _args: &[Term]) -> bif::Result {
+    let heap = &process.heap;
     let datetime = Utc::now();
 
     let date = tup3!(
@@ -160,10 +144,10 @@ pub fn universaltime_0(
 
 pub fn posixtime_to_universaltime_1(
     _vm: &vm::Machine,
-    process: &Pin<&mut Process>,
+    process: &mut Process,
     args: &[Term],
 ) -> bif::Result {
-    let heap = &process.context_mut().heap;
+    let heap = &process.heap;
 
     let timestamp: i64 = match args[0].into_number() {
         Ok(value::Num::Integer(i)) => i64::from(i),
@@ -234,10 +218,10 @@ fn time_to_parts(term: Term) -> Option<ErlDateTime> {
 
 pub fn universaltime_to_localtime_1(
     _vm: &vm::Machine,
-    process: &Pin<&mut Process>,
+    process: &mut Process,
     args: &[Term],
 ) -> bif::Result {
-    let heap = &process.context_mut().heap;
+    let heap = &process.heap;
 
     let ((year, month, day), (hour, minute, second)) =
         time_to_parts(args[0]).ok_or_else(|| Exception::new(Reason::EXC_BADARG))?;

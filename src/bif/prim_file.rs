@@ -18,12 +18,8 @@ fn error_to_tuple(heap: &Heap, error: std::io::Error) -> Term {
     tup2!(heap, atom!(ERROR), kind)
 }
 
-pub fn get_cwd_nif_0(
-    _vm: &vm::Machine,
-    process: &Pin<&mut Process>,
-    _args: &[Term],
-) -> bif::Result {
-    let heap = &process.context_mut().heap;
+pub fn get_cwd_nif_0(_vm: &vm::Machine, process: &mut Process, _args: &[Term]) -> bif::Result {
+    let heap = &process.heap;
 
     match std::env::current_dir() {
         Ok(path) => {
@@ -39,13 +35,9 @@ pub fn get_cwd_nif_0(
 
 /// Reads an entire file into \c result, stopping after \c size bytes or EOF. It will read until
 /// EOF if size is 0.
-pub fn read_file_nif_1(
-    _vm: &vm::Machine,
-    process: &Pin<&mut Process>,
-    args: &[Term],
-) -> bif::Result {
+pub fn read_file_nif_1(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     // arg[0] = filename
-    let heap = &process.context_mut().heap;
+    let heap = &process.heap;
 
     // TODO bitstrings or non zero offsets can fail ...
     let cons = Cons::try_from(&args[0])?;
@@ -67,7 +59,7 @@ pub fn read_file_nif_1(
 // TODO: maybe we should pass around as OsString which is null terminated dunno
 pub fn internal_native2name_1(
     vm: &vm::Machine,
-    process: &Pin<&mut Process>,
+    process: &mut Process,
     args: &[Term],
 ) -> bif::Result {
     // we already validated the name into unicode in the previous command
@@ -77,7 +69,7 @@ pub fn internal_native2name_1(
 
 pub fn internal_name2native_1(
     _vm: &vm::Machine,
-    _process: &Pin<&mut Process>,
+    _process: &mut Process,
     args: &[Term],
 ) -> bif::Result {
     // we already validated the name into unicode in the previous command
@@ -225,12 +217,8 @@ fn meta_to_tuple(heap: &Heap, meta: std::fs::Metadata) -> Term {
     )
 }
 
-pub fn read_info_nif_2(
-    _vm: &vm::Machine,
-    process: &Pin<&mut Process>,
-    args: &[Term],
-) -> bif::Result {
-    let heap = &process.context_mut().heap;
+pub fn read_info_nif_2(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
+    let heap = &process.heap;
 
     assert!(args.len() == 2);
 
@@ -264,13 +252,9 @@ pub fn read_info_nif_2(
     Ok(meta_to_tuple(heap, info))
 }
 
-pub fn list_dir_nif_1(
-    _vm: &vm::Machine,
-    process: &Pin<&mut Process>,
-    args: &[Term],
-) -> bif::Result {
+pub fn list_dir_nif_1(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     // arg[0] = filename
-    let heap = &process.context_mut().heap;
+    let heap = &process.heap;
 
     // TODO: needs to work with binary and list based strings
     // TODO bitstrings or non zero offsets can fail ...

@@ -8,25 +8,19 @@ use crate::value::{self, Cons, Term, TryFrom, TryInto, Variant};
 use crate::vm;
 use std::pin::Pin;
 
-pub fn pre_loaded_0(_vm: &vm::Machine, process: &Pin<&mut Process>, args: &[Term]) -> bif::Result {
+pub fn pre_loaded_0(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     use std::path::Path;
-    let heap = &process.context_mut().heap;
 
     let iter = vm::PRE_LOADED
         .iter()
         .map(|path| Path::new(path).file_stem().unwrap().to_str().unwrap())
         .map(|name| Term::atom(atom::from_str(name)));
 
-    Ok(Cons::from_iter(iter, heap))
+    Ok(Cons::from_iter(iter, &process.heap))
 }
 
-pub fn prepare_loading_2(
-    _vm: &vm::Machine,
-    process: &Pin<&mut Process>,
-    args: &[Term],
-) -> bif::Result {
+pub fn prepare_loading_2(_vm: &vm::Machine, process: &mut Process, args: &[Term]) -> bif::Result {
     // arg[0] module name atom, arg[1] raw bytecode bytes
-    let heap = &process.context_mut().heap;
 
     // TODO merge new + load_file?
     let loader = Loader::new();
@@ -40,15 +34,19 @@ pub fn prepare_loading_2(
                 // we box to allocate a permanent space, then we unbox since we'll carry around
                 // the raw pointer that we will Box::from_raw when finalizing.
                 .map(|module| {
-                    Term::boxed(heap, value::BOXED_MODULE, Box::into_raw(Box::new(module)))
+                    Term::boxed(
+                        &process.heap,
+                        value::BOXED_MODULE,
+                        Box::into_raw(Box::new(module)),
+                    )
                 })
-                .or_else(|_| Ok(tup2!(heap, atom!(ERROR), atom!(BADFILE))))
+                .or_else(|_| Ok(tup2!(&process.heap, atom!(ERROR), atom!(BADFILE))))
         })
 }
 
 pub fn has_prepared_code_on_load_1(
     _vm: &vm::Machine,
-    _process: &Pin<&mut Process>,
+    _process: &mut Process,
     args: &[Term],
 ) -> bif::Result {
     match args[0].try_into() {
@@ -60,11 +58,7 @@ pub fn has_prepared_code_on_load_1(
     }
 }
 
-pub fn finish_loading_1(
-    vm: &vm::Machine,
-    _process: &Pin<&mut Process>,
-    args: &[Term],
-) -> bif::Result {
+pub fn finish_loading_1(vm: &vm::Machine, _process: &mut Process, args: &[Term]) -> bif::Result {
     value::Cons::try_from(&args[0])?
         .iter()
         .map(|v| {
@@ -79,11 +73,7 @@ pub fn finish_loading_1(
         })
 }
 
-pub fn get_module_info_2(
-    vm: &vm::Machine,
-    _process: &Pin<&mut Process>,
-    args: &[Term],
-) -> bif::Result {
+pub fn get_module_info_2(vm: &vm::Machine, _process: &mut Process, args: &[Term]) -> bif::Result {
     println!("called module_info with {} {}", args[0], args[1]);
 
     let name = match args[0].into_variant() {

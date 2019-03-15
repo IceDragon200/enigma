@@ -24,8 +24,8 @@ impl Mailbox {
         self.queue.push_back(message);
     }
 
-    pub fn receive(&mut self) -> Option<&Term> {
-        self.queue.get(self.save)
+    pub fn receive(&mut self) -> Option<Term> {
+        self.queue.get(self.save).map(|v| *v) // TODO should probably pop
     }
 
     // recv_mark

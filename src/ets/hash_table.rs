@@ -1,7 +1,7 @@
 use super::*;
 use crate::chashmap::CHashMap;
 use crate::immix::Heap;
-use crate::value::{Cons, Term, TryFrom, TryInto, TryIntoMut, Tuple, Variant};
+use crate::value::{Cons, Term, TryFrom, TryIntoMut, Tuple};
 use error::*;
 
 pub(crate) struct HashTable {
@@ -14,7 +14,7 @@ unsafe impl Sync for HashTable {}
 unsafe impl Send for HashTable {}
 
 impl HashTable {
-    pub fn new(meta: Metadata, process: &Pin<&mut Process>) -> Self {
+    pub fn new(meta: Metadata, process: &mut Process) -> Self {
         Self {
             meta,
             hashmap: CHashMap::new(),
@@ -33,24 +33,24 @@ impl Table for HashTable {
         &self.meta
     }
 
-    fn first(&self, process: &Pin<&mut Process>) -> Result<Term> {
+    fn first(&self, process: &mut Process) -> Result<Term> {
         unimplemented!()
     }
 
-    fn next(&self, process: &Pin<&mut Process>, key: Term) -> Result<Term> {
+    fn next(&self, process: &mut Process, key: Term) -> Result<Term> {
         unimplemented!()
     }
 
-    fn last(&self, process: &Pin<&mut Process>) -> Result<Term> {
+    fn last(&self, process: &mut Process) -> Result<Term> {
         unimplemented!()
     }
 
-    fn prev(&self, process: &Pin<&mut Process>, key: Term) -> Result<Term> {
+    fn prev(&self, process: &mut Process, key: Term) -> Result<Term> {
         unimplemented!()
     }
 
     // put
-    fn insert(&self, process: &Pin<&mut Process>, value: Term, key_clash_fail: bool) -> Result<()> {
+    fn insert(&self, process: &mut Process, value: Term, key_clash_fail: bool) -> Result<()> {
         // TODO deep copy that value
         let value = value.deep_clone(&self.heap);
         let key = get_key(self.meta().keypos, value);
@@ -58,9 +58,7 @@ impl Table for HashTable {
         Ok(())
     }
 
-    fn get(&self, process: &Pin<&mut Process>, key: Term) -> Result<Term> {
-        let heap = &process.context_mut().heap;
-
+    fn get(&self, process: &mut Process, key: Term) -> Result<Term> {
         println!("debug: ----");
         self.hashmap.clone().into_iter().for_each(|(key, value)| {
             println!("key {} value {}", key, value);
@@ -70,13 +68,11 @@ impl Table for HashTable {
             .hashmap
             .get(&key)
             // TODO: bag types
-            .map(|v| cons!(heap, v.deep_clone(heap), Term::nil()))
+            .map(|v| cons!(&process.heap, v.deep_clone(&process.heap), Term::nil()))
             .unwrap_or_else(|| Term::nil()))
     }
 
-    fn get_element(&self, process: &Pin<&mut Process>, key: Term, index: usize) -> Result<Term> {
-        let heap = &process.context_mut().heap;
-
+    fn get_element(&self, process: &mut Process, key: Term, index: usize) -> Result<Term> {
         Ok(self
             .hashmap
             .get(&key)
@@ -86,7 +82,7 @@ impl Table for HashTable {
                 assert!(tup.len() > index);
                 tup[index]
             })
-            .map(|v| cons!(heap, v.deep_clone(heap), Term::nil()))
+            .map(|v| cons!(&process.heap, v.deep_clone(&process.heap), Term::nil()))
             .unwrap_or_else(|| Term::nil()))
     }
 
@@ -95,7 +91,7 @@ impl Table for HashTable {
         self.hashmap.contains_key(&key)
     }
 
-    fn update_element(&self, process: &Pin<&mut Process>, key: Term, list: Term) -> Result<Term> {
+    fn update_element(&self, process: &mut Process, key: Term, list: Term) -> Result<Term> {
         let item = match self.hashmap.get_mut(&key) {
             Some(item) => item,
             None => return Ok(atom!(FALSE)), // return BadKey
@@ -159,7 +155,7 @@ impl Table for HashTable {
         unimplemented!()
     }
 
-    // int (*db_select_chunk)(process: &Pin<&mut Process>,
+    // int (*db_select_chunk)(process: &mut Process,
     // table: &Self, /* [in out] */
     //                        Eterm tid,
     // Eterm pattern,
@@ -171,12 +167,11 @@ impl Table for HashTable {
     fn select(
         &self,
         vm: &vm::Machine,
-        process: &Pin<&mut Process>,
+        process: &mut Process,
         pattern: &pam::Pattern,
         flags: pam::r#match::Flag,
         reverse: bool,
     ) -> Result<Term> {
-        let heap = &process.context_mut().heap;
         let res = self
             .hashmap
             .clone() // TODO: eww, temporary until I implement my own buckets
@@ -184,7 +179,7 @@ impl Table for HashTable {
             .fold(Term::nil(), |acc, (_key, val)| {
                 println!("running select for {}", val);
                 match pam::r#match::run(vm, process, pattern, val, flags) {
-                    Some(val) => cons!(heap, val, acc),
+                    Some(val) => cons!(&process.heap, val, acc),
                     None => acc,
                 }
             });
@@ -192,18 +187,17 @@ impl Table for HashTable {
         Ok(res)
     }
 
-    // fn select_continue(&mut self, process: &Pin<&mut Process>, continuation: Term) -> Result<Term> {
+    // fn select_continue(&mut self, process: &mut Process, continuation: Term) -> Result<Term> {
     //     unimplemented!()
     // }
 
     fn select_delete(
         &self,
         vm: &vm::Machine,
-        process: &Pin<&mut Process>,
+        process: &mut Process,
         pattern: &pam::Pattern,
         flags: pam::r#match::Flag,
     ) -> Result<Term> {
-        let heap = &process.context_mut().heap;
         let mut count = 0;
         let am_true = atom!(TRUE);
         self.hashmap.retain(|_key, val| {
@@ -217,40 +211,35 @@ impl Table for HashTable {
                 _ => true,
             }
         });
-        Ok(Term::uint(heap, count as u32))
+        Ok(Term::uint(&process.heap, count as u32))
     }
 
-    // fn select_delete_continue(&mut self, process: &Pin<&mut Process>, continuation: Term) -> Result<Term> {
+    // fn select_delete_continue(&mut self, process: &mut Process, continuation: Term) -> Result<Term> {
     //     unimplemented!()
     // }
 
-    fn select_count(&self, process: &Pin<&mut Process>, tid: Term, pattern: Term) -> Result<Term> {
+    fn select_count(&self, process: &mut Process, tid: Term, pattern: Term) -> Result<Term> {
         unimplemented!()
     }
 
-    // fn select_count_continue(&self, process: &Pin<&mut Process>, continuation: Term) -> Result<Term> {
+    // fn select_count_continue(&self, process: &mut Process, continuation: Term) -> Result<Term> {
     //     unimplemented!()
     // }
 
-    fn select_replace(
-        &mut self,
-        process: &Pin<&mut Process>,
-        tid: Term,
-        pattern: Term,
-    ) -> Result<Term> {
+    fn select_replace(&mut self, process: &mut Process, tid: Term, pattern: Term) -> Result<Term> {
         unimplemented!()
     }
 
-    // fn select_replace_continue(&mut self, process: &Pin<&mut Process>, continuation: Term) -> Result<Term> {
+    // fn select_replace_continue(&mut self, process: &mut Process, continuation: Term) -> Result<Term> {
     //     unimplemented!()
     // }
 
-    fn take(&mut self, process: &Pin<&mut Process>, key: Term) -> Result<Term> {
+    fn take(&mut self, process: &mut Process, key: Term) -> Result<Term> {
         unimplemented!()
     }
 
     /// takes reds, then returns new reds (equal to delete_all)
-    fn clear(&mut self, process: &Pin<&mut Process>, reds: usize) -> Result<usize> {
+    fn clear(&mut self, process: &mut Process, reds: usize) -> Result<usize> {
         unimplemented!()
     }
 }

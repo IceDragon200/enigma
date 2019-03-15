@@ -13,7 +13,6 @@ pub use crate::signal_queue::{ExitKind, Signal};
 use crate::value::{self, Term, TryInto};
 use crate::vm::RcState;
 use hashbrown::{HashMap, HashSet};
-use std::cell::UnsafeCell;
 use std::panic::RefUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -50,7 +49,6 @@ pub struct ExecutionContext {
     pub f: [f64; MAX_REG],
     /// Stack (accessible through Y registers).
     pub stack: Vec<Term>,
-    pub heap: Heap,
     /// Number of catches on stack.
     pub catches: usize,
     /// Program pointer, points to the current instruction.
@@ -91,7 +89,6 @@ impl ExecutionContext {
             x: [Term::nil(); 16],
             f: [0.0f64; 16],
             stack: Vec::new(),
-            heap: Heap::new(),
             catches: 0,
             ip: InstrPtr { ptr: 0, module },
             cp: None,
@@ -130,9 +127,6 @@ bitflags! {
 
 #[derive(Debug)]
 pub struct LocalData {
-    // allocator, panic handler
-    context: Box<ExecutionContext>,
-
     pub state: StateFlag,
 
     parent: PID,
@@ -170,7 +164,11 @@ pub struct LocalData {
 pub struct Process {
     /// Data stored in a process that should only be modified by a single thread
     /// at once.
-    pub local_data: UnsafeCell<LocalData>,
+    pub local_data: LocalData,
+
+    pub context: ExecutionContext,
+
+    pub heap: Heap,
 
     /// The process identifier of this process.
     pub pid: PID,
@@ -184,6 +182,8 @@ pub struct Process {
 
 unsafe impl Sync for LocalData {}
 unsafe impl Send for LocalData {}
+unsafe impl Sync for ExecutionContext {}
+unsafe impl Send for ExecutionContext {}
 unsafe impl Sync for Process {}
 impl RefUnwindSafe for Process {}
 
@@ -197,7 +197,6 @@ impl Process {
     ) -> RcProcess {
         let local_data = LocalData {
             // allocator: LocalAllocator::new(global_allocator.clone(), config),
-            context: Box::new(context),
             flags: Flag::INITIAL,
             state: StateFlag::INITIAL,
             parent,
@@ -215,7 +214,9 @@ impl Process {
 
         Arc::pin(Process {
             pid,
-            local_data: UnsafeCell::new(local_data),
+            heap: Heap::new(),
+            local_data: local_data,
+            context,
             waiting_for_message: AtomicBool::new(false),
             waker: None,
         })
@@ -233,23 +234,24 @@ impl Process {
         Process::with_rc(pid, parent, context /*global_allocator, config*/)
     }
 
-    #[allow(clippy::mut_from_ref)]
-    pub fn context_mut(&self) -> &mut ExecutionContext {
-        &mut *self.local_data_mut().context
-    }
+    // #[allow(clippy::mut_from_ref)]
+    // pub fn context_mut(&mut self) -> &mut ExecutionContext {
+    //     &mut *self.local_data_mut().context
+    // }
 
-    pub fn context(&self) -> &ExecutionContext {
-        &*self.local_data_mut().context
-    }
+    // pub fn context(&self) -> &ExecutionContext {
+    //     &*self.local_data_mut().context
+    // }
 
+    // TODO: replace in the long run
     #[allow(clippy::mut_from_ref)]
     pub fn local_data_mut(&self) -> &mut LocalData {
-        unsafe { &mut *self.local_data.get() }
+        unsafe { &mut *(&self.local_data as *const LocalData as *mut LocalData) }
     }
 
-    pub fn local_data(&self) -> &LocalData {
-        unsafe { &*self.local_data.get() }
-    }
+    // pub fn local_data(&self) -> &LocalData {
+    //     unsafe { &*self.local_data.get() }
+    // }
 
     pub fn is_main(&self) -> bool {
         self.pid == 0
@@ -275,13 +277,11 @@ impl Process {
     }
 
     // awkward result, but it works
-    pub fn receive(&self) -> Result<Option<&Term>, Exception> {
-        let local_data = self.local_data_mut();
-
-        if !local_data.mailbox.has_messages() {
+    pub fn receive(&mut self) -> Result<Option<Term>, Exception> {
+        if !self.local_data.mailbox.has_messages() {
             self.process_incoming()?
         }
-        Ok(local_data.mailbox.receive())
+        Ok(self.local_data_mut().mailbox.receive())
     }
 
     pub fn wake_up(&self) {
@@ -303,37 +303,37 @@ impl Process {
 
     // we're in receive(), but ran out of internal messages, process external queue
     /// An Err signals that we're now exiting.
-    pub fn process_incoming(&self) -> Result<(), Exception> {
+    pub fn process_incoming(&mut self) -> Result<(), Exception> {
         // get internal, if we ran out, start processing external
-        while let Some(signal) = self.local_data_mut().signal_queue.receive() {
+        while let Some(signal) = self.local_data.signal_queue.receive() {
             match signal {
                 Signal::Message { value, .. } => {
-                    self.local_data_mut().mailbox.send(value);
+                    self.local_data.mailbox.send(value);
                 }
                 Signal::Exit { .. } => {
                     self.handle_exit_signal(signal)?;
                 }
                 Signal::Link { from } => {
-                    self.local_data_mut().links.insert(from);
+                    self.local_data.links.insert(from);
                 }
                 Signal::Unlink { from } => {
-                    self.local_data_mut().links.remove(&from);
+                    self.local_data.links.remove(&from);
                 }
                 Signal::MonitorDown { .. } => {
                     // monitor down: delete from monitors tree, deliver :down message
                     self.handle_monitor_down_signal(signal);
                 }
                 Signal::Monitor { from, reference } => {
-                    self.local_data_mut().lt_monitors.push((from, reference));
+                    self.local_data.lt_monitors.push((from, reference));
                 }
                 Signal::Demonitor { from, reference } => {
                     if let Some(pos) = self
-                        .local_data_mut()
+                        .local_data
                         .lt_monitors
                         .iter()
                         .position(|(x, r)| *x == from && *r == reference)
                     {
-                        self.local_data_mut().lt_monitors.remove(pos);
+                        self.local_data.lt_monitors.remove(pos);
                     }
                 }
             }
@@ -341,7 +341,7 @@ impl Process {
         Ok(())
     }
 
-    fn handle_monitor_down_signal(&self, signal: Signal) {
+    fn handle_monitor_down_signal(&mut self, signal: Signal) {
         // Create a 'DOWN' message and replace the signal with it...
         if let Signal::MonitorDown {
             from,
@@ -350,13 +350,19 @@ impl Process {
         } = signal
         {
             // assert!(is_immed(reason));
-            let heap = &self.context_mut().heap;
             let from = Term::pid(from);
-            let reference = Term::reference(heap, reference as usize);
+            let reference = Term::reference(&self.heap, reference as usize);
             let reason = reason.value;
 
-            let msg = tup!(heap, atom!(DOWN), reference, atom!(PROCESS), from, reason);
-            self.local_data_mut().mailbox.send(msg);
+            let msg = tup!(
+                &self.heap,
+                atom!(DOWN),
+                reference,
+                atom!(PROCESS),
+                from,
+                reason
+            );
+            self.local_data.mailbox.send(msg);
         // bump reds by 8?
         } else {
             unreachable!();
@@ -364,13 +370,13 @@ impl Process {
     }
 
     /// Return value is true if the process is now terminating.
-    pub fn handle_exit_signal(&self, signal: Signal) -> Result<(), Exception> {
+    pub fn handle_exit_signal(&mut self, signal: Signal) -> Result<(), Exception> {
         // this is extremely awkward, wish we could enforce a signal variant on the function signature
         // we're also technically matching twice since process_incoming also pattern matches.
         // TODO: inline?
         if let Signal::Exit { kind, from, reason } = signal {
             let mut reason = reason.value;
-            let local_data = self.local_data_mut();
+            let local_data = &mut self.local_data;
 
             if kind == ExitKind::ExitLinked {
                 // delete from link tree
@@ -383,12 +389,7 @@ impl Process {
             if reason != atom!(KILL) && local_data.flags.contains(Flag::TRAP_EXIT) {
                 // if reason is immed, create an EXIT message tuple instead and replace
                 // (push to internal msg queue as message)
-                let msg = tup3!(
-                    &self.context_mut().heap,
-                    atom!(EXIT),
-                    Term::pid(from),
-                    reason
-                );
+                let msg = tup3!(&self.heap, atom!(EXIT), Term::pid(from), reason);
                 // TODO: ensure we do process wakeup
                 // erts_proc_notify_new_message(c_p, ERTS_PROC_LOCK_MAIN);
                 local_data.mailbox.send(msg);
@@ -425,7 +426,7 @@ impl Process {
                 // Exit process...
 
                 // kill catches
-                self.context_mut().catches = 0;
+                self.context.catches = 0;
 
                 // return an exception to trigger process exit
                 Err(Exception::with_value(Reason::EXT_EXIT, reason))
@@ -437,8 +438,8 @@ impl Process {
     }
 
     // equivalent of erts_continue_exit_process
-    pub fn exit(&self, state: &RcState, reason: Exception) {
-        let local_data = self.local_data_mut();
+    pub fn exit(&mut self, state: &RcState, reason: Exception) {
+        let local_data = &mut self.local_data;
 
         // set state to exiting
 
@@ -517,14 +518,18 @@ bitflags! {
 
 pub fn spawn(
     state: &RcState,
-    parent: &Pin<&mut Process>,
+    parent: &mut Process,
     module: *const Module,
     func: u32,
     args: Term,
     flags: SpawnFlag,
 ) -> Result<Term, Exception> {
     let new_proc = allocate(state, parent.pid, module)?;
-    let context = new_proc.context_mut();
+    let mut new_proc = unsafe {
+        // TODO: this should happen in the alloc
+        let ptr = &*new_proc as *const Process as *mut Process;
+        Pin::new_unchecked(&mut *ptr)
+    };
     let mut ret = Term::pid(new_proc.pid);
 
     // Set the arglist into process registers.
@@ -532,12 +537,12 @@ pub fn spawn(
     let mut i = 0;
     let mut cons = &args;
     while let Ok(value::Cons { head, tail }) = cons.try_into() {
-        context.x[i] = *head;
+        new_proc.context.x[i] = *head;
         i += 1;
         cons = tail;
     }
     // lastly, the tail
-    context.x[i] = *cons;
+    new_proc.context.x[i] = *cons;
 
     println!(
         "Spawning... pid={} mfa={} args={}",
@@ -554,36 +559,32 @@ pub fn spawn(
             .expect("process::spawn could not locate func")
     };
 
-    context.ip.ptr = *func;
+    new_proc.context.ip.ptr = *func;
 
     // Check if this process should be initially linked to its parent.
     if flags.contains(SpawnFlag::LINK) {
         new_proc.local_data_mut().links.insert(parent.pid);
 
-        parent.local_data_mut().links.insert(new_proc.pid);
+        parent.local_data.links.insert(new_proc.pid);
     }
 
     if flags.contains(SpawnFlag::MONITOR) {
         let reference = state.next_ref();
 
-        parent
-            .local_data_mut()
-            .monitors
-            .insert(reference, new_proc.pid);
+        parent.local_data.monitors.insert(reference, new_proc.pid);
 
         new_proc
             .local_data_mut()
             .lt_monitors
             .push((parent.pid, reference));
 
-        let heap = &parent.context_mut().heap;
-        ret = tup2!(heap, ret, Term::reference(heap, reference))
+        ret = tup2!(&parent.heap, ret, Term::reference(&parent.heap, reference))
     }
 
-    let new_proc = unsafe {
-        let ptr = &*new_proc as *const Process as *mut Process;
-        Pin::new_unchecked(&mut *ptr)
-    };
+    // let new_proc = unsafe {
+    //     let ptr = &*new_proc as *const Process as *mut Process;
+    //     Pin::new_unchecked(&mut *ptr)
+    // };
     use futures::compat::Compat;
     let future = Compat::new(new_proc);
     tokio::spawn(future);
@@ -593,7 +594,7 @@ pub fn spawn(
 
 pub fn send_message(
     state: &RcState,
-    process: &Pin<&mut Process>,
+    process: &mut Process,
     pid: Term,
     msg: Term,
 ) -> Result<Term, Exception> {
@@ -655,7 +656,7 @@ impl Future for Process {
 
     fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<Self::Output> {
         self.waker = None;
-        Machine::with_current(|vm| match vm.run_with_error_handling(&mut self) {
+        Machine::with_current(|vm| match vm.run_with_error_handling(&mut self.get_mut()) {
             State::Done => Poll::Ready(Ok(())),
             State::Wait => {
                 self.waker = Some(waker.clone());
